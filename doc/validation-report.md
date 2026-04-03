@@ -44,10 +44,10 @@ Health status confirmed:
 
 Executed successfully:
 
-- [sql/01_create_databases.sql](/Users/kien.ly/code/data-stack/sql/01_create_databases.sql)
-- [sql/02_create_ods_tables.sql](/Users/kien.ly/code/data-stack/sql/02_create_ods_tables.sql)
-- [sql/03_create_routine_load.sql](/Users/kien.ly/code/data-stack/sql/03_create_routine_load.sql)
-- [sql/05_meta_checkpoint.sql](/Users/kien.ly/code/data-stack/sql/05_meta_checkpoint.sql)
+- [sql/01_create_databases.sql](./data-stack/sql/01_create_databases.sql)
+- [sql/02_create_ods_tables.sql](./data-stack/sql/02_create_ods_tables.sql)
+- [sql/03_create_routine_load.sql](./data-stack/sql/03_create_routine_load.sql)
+- [sql/05_meta_checkpoint.sql](./data-stack/sql/05_meta_checkpoint.sql)
 
 Created objects:
 
@@ -63,9 +63,9 @@ Created objects:
 
 The original bootstrap SQL needed Doris-specific corrections during validation:
 
-- [sql/02_create_ods_tables.sql](/Users/kien.ly/code/data-stack/sql/02_create_ods_tables.sql)
+- [sql/02_create_ods_tables.sql](./data-stack/sql/02_create_ods_tables.sql)
   - Changed `DUPLICATE KEY` to a valid ordered key prefix: `event_id, event_type, event_time`
-- [sql/03_create_routine_load.sql](/Users/kien.ly/code/data-stack/sql/03_create_routine_load.sql)
+- [sql/03_create_routine_load.sql](./data-stack/sql/03_create_routine_load.sql)
   - Changed `"max_batch_rows"` from `20000` to `200001`
   - Changed `"max_batch_size"` from `10485760` to `104857600`
 
@@ -213,8 +213,8 @@ The two failing silver tests are false negatives caused by adapter/runtime behav
 
 Evidence:
 
-- [dbt/target/compiled/ecommerce_demo/tests/schema.yml/not_null_silver_events_event_id.sql](/Users/kien.ly/code/data-stack/dbt/target/compiled/ecommerce_demo/tests/schema.yml/not_null_silver_events_event_id.sql) compiles to a correct query against ``dwh`.`silver_events``
-- [dbt/target/compiled/ecommerce_demo/tests/schema.yml/unique_silver_events_event_id.sql](/Users/kien.ly/code/data-stack/dbt/target/compiled/ecommerce_demo/tests/schema.yml/unique_silver_events_event_id.sql) compiles to a correct query against ``dwh`.`silver_events``
+- [dbt/target/compiled/ecommerce_demo/tests/schema.yml/not_null_silver_events_event_id.sql](./data-stack/dbt/target/compiled/ecommerce_demo/tests/schema.yml/not_null_silver_events_event_id.sql) compiles to a correct query against ``dwh`.`silver_events``
+- [dbt/target/compiled/ecommerce_demo/tests/schema.yml/unique_silver_events_event_id.sql](./data-stack/dbt/target/compiled/ecommerce_demo/tests/schema.yml/unique_silver_events_event_id.sql) compiles to a correct query against ``dwh`.`silver_events``
 - Running those exact queries directly in Doris returned zero rows
 - `dwh.silver_events` exists and has `401` rows with `401` distinct `event_id`s
 
@@ -229,20 +229,20 @@ Practical conclusion:
 
 Validated components:
 
-- [jobs/optional_iceberg_sink.py](/Users/kien.ly/code/data-stack/jobs/optional_iceberg_sink.py)
+- [jobs/optional_iceberg_sink.py](./data-stack/jobs/optional_iceberg_sink.py)
 - Local SQL catalog metadata at `jobs/.iceberg/demo_catalog.db`
 - MinIO warehouse path `s3://lakehouse/warehouse/lakehouse/raw_events`
 - Doris checkpoint state in `meta.batch_job_checkpoint`
 
 ### Dependencies and Runtime
 
-Updated [docker-compose.yml](/Users/kien.ly/code/data-stack/docker-compose.yml):
+Updated [docker-compose.yml](./data-stack/docker-compose.yml):
 
 - Added `ICEBERG_CATALOG_URI`
 - Added `ICEBERG_S3_REGION`
-- Changed the `jobs` service to install dependencies from [jobs/requirements.txt](/Users/kien.ly/code/data-stack/jobs/requirements.txt)
+- Changed the `jobs` service to install dependencies from [jobs/requirements.txt](./data-stack/jobs/requirements.txt)
 
-Added [jobs/requirements.txt](/Users/kien.ly/code/data-stack/jobs/requirements.txt):
+Added [jobs/requirements.txt](./data-stack/jobs/requirements.txt):
 
 - `pymysql==1.1.1`
 - `minio==7.2.15`
@@ -290,7 +290,7 @@ This confirms the local demo sink advances checkpoints without rewriting the pre
 
 ### Compose and Runtime Fixes
 
-Updated [docker-compose.yml](/Users/kien.ly/code/data-stack/docker-compose.yml) to resolve runtime failures:
+Updated [docker-compose.yml](./data-stack/docker-compose.yml) to resolve runtime failures:
 
 - Corrected Doris image tags
 - Corrected `FE_SERVERS` format
@@ -302,15 +302,15 @@ Updated [docker-compose.yml](/Users/kien.ly/code/data-stack/docker-compose.yml) 
 
 ### dbt Project Fixes
 
-Updated [dbt/dbt_project.yml](/Users/kien.ly/code/data-stack/dbt/dbt_project.yml):
+Updated [dbt/dbt_project.yml](./data-stack/dbt/dbt_project.yml):
 
 - Added `+replication_num: 1` for single-backend local Doris
 
-Added [dbt/macros/generate_schema_name.sql](/Users/kien.ly/code/data-stack/dbt/macros/generate_schema_name.sql):
+Added [dbt/macros/generate_schema_name.sql](./data-stack/dbt/macros/generate_schema_name.sql):
 
 - Prevents dbt from generating schema names like `dwh_dwh` and `dwh_analytics`
 
-Updated [dbt/tests/schema.yml](/Users/kien.ly/code/data-stack/dbt/tests/schema.yml):
+Updated [dbt/tests/schema.yml](./data-stack/dbt/tests/schema.yml):
 
 - Declared full bronze and silver column sets so `dbt-doris` CTAS creates all expected columns
 

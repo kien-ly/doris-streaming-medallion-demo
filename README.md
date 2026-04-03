@@ -55,7 +55,7 @@ Validated components:
 - dbt bronze, silver, and gold model builds
 - Gold metric queries
 
-Validation details are recorded in [doc/validation-report.md](/Users/kien.ly/code/data-stack/doc/validation-report.md).
+Validation details are recorded in [doc/validation-report.md](./data-stack/doc/validation-report.md).
 
 ## Prerequisites
 
@@ -313,7 +313,7 @@ The Iceberg path is optional and is not required for the mandatory local demo pa
 
 Validated implementation:
 
-- [jobs/optional_iceberg_sink.py](/Users/kien.ly/code/data-stack/jobs/optional_iceberg_sink.py) reads incremental windows from `dwh.bronze_events`
+- [jobs/optional_iceberg_sink.py](./data-stack/jobs/optional_iceberg_sink.py) reads incremental windows from `dwh.bronze_events`
 - The job stores Iceberg catalog metadata in a local SQLite catalog at `jobs/.iceberg/demo_catalog.db`
 - Iceberg data and metadata files are written to MinIO under `s3://lakehouse/warehouse/lakehouse/raw_events`
 - `meta.batch_job_checkpoint` advances only after a successful append or a successful empty-window run
@@ -342,4 +342,4 @@ docker compose exec jobs python -c "from minio import Minio; client = Minio('min
 
 ## Reference Results
 
-For a recorded validation run, including service health, row counts, and example metric outputs, see [doc/validation-report.md](/Users/kien.ly/code/data-stack/doc/validation-report.md).
+For a recorded validation run, including service health, row counts, and example metric outputs, see [doc/validation-report.md](./doc/validation-report.md).
