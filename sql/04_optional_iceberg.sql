@@ -1,0 +1,5 @@
+-- Optional Iceberg path note.
+-- The validated local demo uses PyIceberg directly from jobs/optional_iceberg_sink.py.
+-- No Doris-side Iceberg catalog registration is required for that path.
+--
+-- Keep this file as a documentation placeholder for future Doris external catalog work.

@@ -1,0 +1,20 @@
+name: ecommerce_demo
+version: "1.0.0"
+config-version: 2
+
+profile: ecommerce_demo
+
+model-paths: ["models", "tests"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+
+models:
+  ecommerce_demo:
+    +materialized: table
+    +replication_num: 1
+    bronze:
+      +schema: dwh
+    silver:
+      +schema: dwh
+    gold:
+      +schema: analytics

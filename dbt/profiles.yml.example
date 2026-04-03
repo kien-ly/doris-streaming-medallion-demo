@@ -1,0 +1,13 @@
+ecommerce_demo:
+  target: local
+  outputs:
+    local:
+      type: doris
+      host: "{{ env_var('DORIS_HOST', 'localhost') }}"
+      port: "{{ env_var('DORIS_PORT', '9030') | int }}"
+      schema: dwh
+      username: "{{ env_var('DORIS_USER', 'root') }}"
+      password: "{{ env_var('DORIS_PASSWORD', '') }}"
+      database: dwh
+      threads: 1
+

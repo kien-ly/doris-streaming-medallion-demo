@@ -1,0 +1,4 @@
+pymysql==1.1.1
+minio==7.2.15
+pyarrow==19.0.1
+pyiceberg[pyarrow,sql-sqlite]==0.9.1

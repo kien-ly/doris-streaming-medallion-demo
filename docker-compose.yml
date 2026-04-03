@@ -1,0 +1,191 @@
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.1.10
+    container_name: redpanda
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - 512M
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092,OUTSIDE://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - PLAINTEXT://redpanda:9092,OUTSIDE://localhost:19092
+      - --pandaproxy-addr
+      - 0.0.0.0:8082
+      - --advertise-pandaproxy-addr
+      - redpanda:8082
+    ports:
+      - "19092:19092"
+      - "9644:9644"
+      - "8082:8082"
+    networks:
+      - demo-net
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+
+  redpanda-ui:
+    image: docker.redpanda.com/redpandadata/console:v2.8.2
+    container_name: redpanda-ui
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      REDPANDA_ADMINAPI_ENABLED: "true"
+      REDPANDA_ADMINAPI_URLS: http://redpanda:9644
+      SERVER_LISTENPORT: "8080"
+    ports:
+      - "8081:8080"
+    networks:
+      - demo-net
+
+  minio:
+    image: minio/minio:RELEASE.2025-02-28T09-55-16Z
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - demo-net
+
+  doris-fe:
+    image: apache/doris:fe-2.1.8.1
+    container_name: doris-fe
+    hostname: doris-fe
+    environment:
+      FE_SERVERS: fe1:172.31.240.10:9010
+      FE_ID: "1"
+    ports:
+      - "8030:8030"
+      - "9030:9030"
+    volumes:
+      - doris-fe-meta:/opt/apache-doris/fe/doris-meta
+    networks:
+      demo-net:
+        ipv4_address: 172.31.240.10
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h 127.0.0.1 -P 9030 -u root -e 'SHOW FRONTENDS;' >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  doris-be:
+    image: apache/doris:be-2.1.8.1
+    container_name: doris-be
+    hostname: doris-be
+    depends_on:
+      doris-fe:
+        condition: service_started
+    environment:
+      FE_SERVERS: fe1:172.31.240.10:9010
+      BE_ADDR: 172.31.240.11:9050
+    ports:
+      - "8040:8040"
+    volumes:
+      - doris-be-storage:/opt/apache-doris/be/storage
+    networks:
+      demo-net:
+        ipv4_address: 172.31.240.11
+
+  producer:
+    image: python:3.11-slim
+    container_name: producer
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    working_dir: /app
+    environment:
+      REDPANDA_BROKERS: ${REDPANDA_BROKERS:-redpanda:9092}
+      REDPANDA_TOPIC: ${REDPANDA_TOPIC:-ecommerce_events}
+      EVENTS_PER_SECOND: ${EVENTS_PER_SECOND:-2}
+      ENABLE_SCHEMA_EVOLUTION: ${ENABLE_SCHEMA_EVOLUTION:-false}
+      ENABLE_DUPLICATE_MODE: ${ENABLE_DUPLICATE_MODE:-false}
+    volumes:
+      - ./producer:/app
+    networks:
+      - demo-net
+    command: >
+      sh -c "pip install --no-cache-dir -r requirements.txt &&
+      python producer.py"
+
+  dbt-runner:
+    image: python:3.11-slim
+    container_name: dbt-runner
+    depends_on:
+      doris-fe:
+        condition: service_started
+    working_dir: /workspace/dbt
+    environment:
+      DBT_PROFILES_DIR: /workspace/dbt
+      DORIS_HOST: doris-fe
+      DORIS_PORT: "${DORIS_PORT:-9030}"
+      DORIS_USER: ${DORIS_USER:-root}
+      DORIS_PASSWORD: ${DORIS_PASSWORD:-}
+    volumes:
+      - ./dbt:/workspace/dbt
+    networks:
+      - demo-net
+    command: >
+      sh -c "pip install --no-cache-dir dbt-core==1.10.4 dbt-doris==1.0.0 &&
+      tail -f /dev/null"
+
+  jobs:
+    image: python:3.11-slim
+    container_name: jobs
+    depends_on:
+      minio:
+        condition: service_started
+      doris-fe:
+        condition: service_started
+    working_dir: /workspace/jobs
+    environment:
+      DORIS_HOST: doris-fe
+      DORIS_PORT: "${DORIS_PORT:-9030}"
+      DORIS_USER: ${DORIS_USER:-root}
+      DORIS_PASSWORD: ${DORIS_PASSWORD:-}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:-lakehouse}
+      ICEBERG_ENABLED: ${ICEBERG_ENABLED:-false}
+      ICEBERG_CATALOG_NAME: ${ICEBERG_CATALOG_NAME:-demo_catalog}
+      ICEBERG_CATALOG_URI: ${ICEBERG_CATALOG_URI:-sqlite:////workspace/jobs/.iceberg/demo_catalog.db}
+      ICEBERG_WAREHOUSE: ${ICEBERG_WAREHOUSE:-s3://lakehouse/warehouse}
+      ICEBERG_S3_REGION: ${ICEBERG_S3_REGION:-us-east-1}
+    volumes:
+      - ./jobs:/workspace/jobs
+    networks:
+      - demo-net
+    command: >
+      sh -c "pip install --no-cache-dir -r requirements.txt &&
+      tail -f /dev/null"
+
+volumes:
+  minio-data:
+  doris-fe-meta:
+  doris-be-storage:
+
+networks:
+  demo-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.240.0/24
