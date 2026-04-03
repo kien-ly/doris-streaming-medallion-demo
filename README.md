@@ -76,17 +76,17 @@ Notes:
 
 ## Repository Layout
 
-- [docker-compose.yml](/Users/kien.ly/code/data-stack/docker-compose.yml)
-- [sql/01_create_databases.sql](/Users/kien.ly/code/data-stack/sql/01_create_databases.sql)
-- [sql/02_create_ods_tables.sql](/Users/kien.ly/code/data-stack/sql/02_create_ods_tables.sql)
-- [sql/03_create_routine_load.sql](/Users/kien.ly/code/data-stack/sql/03_create_routine_load.sql)
-- [sql/04_optional_iceberg.sql](/Users/kien.ly/code/data-stack/sql/04_optional_iceberg.sql)
-- [sql/05_meta_checkpoint.sql](/Users/kien.ly/code/data-stack/sql/05_meta_checkpoint.sql)
-- [producer/producer.py](/Users/kien.ly/code/data-stack/producer/producer.py)
-- [dbt/dbt_project.yml](/Users/kien.ly/code/data-stack/dbt/dbt_project.yml)
-- [dbt/tests/schema.yml](/Users/kien.ly/code/data-stack/dbt/tests/schema.yml)
-- [jobs/optional_iceberg_sink.py](/Users/kien.ly/code/data-stack/jobs/optional_iceberg_sink.py)
-- [doc/validation-report.md](/Users/kien.ly/code/data-stack/doc/validation-report.md)
+- [docker-compose.yml](./docker-compose.yml)
+- [sql/01_create_databases.sql](./sql/01_create_databases.sql)
+- [sql/02_create_ods_tables.sql](./sql/02_create_ods_tables.sql)
+- [sql/03_create_routine_load.sql](./sql/03_create_routine_load.sql)
+- [sql/04_optional_iceberg.sql](./sql/04_optional_iceberg.sql)
+- [sql/05_meta_checkpoint.sql](./sql/05_meta_checkpoint.sql)
+- [producer/producer.py](./producer/producer.py)
+- [dbt/dbt_project.yml](./dbt/dbt_project.yml)
+- [dbt/tests/schema.yml](./dbt/tests/schema.yml)
+- [jobs/optional_iceberg_sink.py](./jobs/optional_iceberg_sink.py)
+- [doc/validation-report.md](./doc/validation-report.md)
 
 ## Quick Start
 
