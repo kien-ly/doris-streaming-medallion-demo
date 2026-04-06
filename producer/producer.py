@@ -9,7 +9,10 @@ from datetime import datetime, timedelta, timezone
 
 from confluent_kafka import Producer
 from confluent_kafka.admin import AdminClient, NewTopic
+from confluent_kafka.schema_registry import Schema, SchemaRegistryClient
 from faker import Faker
+from fastavro import parse_schema
+from fastavro.validation import validate as avro_validate
 
 
 fake = Faker()
@@ -33,6 +36,57 @@ STATUSES = {
     "order_paid": "paid",
     "order_cancelled": "cancelled",
 }
+EVENT_SCHEMA = """
+{
+  "type": "record",
+  "name": "ecommerce_event",
+  "namespace": "demo.streaming",
+  "fields": [
+    {"name": "schema_id", "type": "int"},
+    {"name": "schema_version", "type": "int"},
+    {"name": "event_id", "type": "string"},
+    {
+      "name": "event_type",
+      "type": {
+        "type": "enum",
+        "name": "event_type_enum",
+        "symbols": [
+          "page_view",
+          "add_to_cart",
+          "checkout_started",
+          "order_created",
+          "order_paid",
+          "order_cancelled"
+        ]
+      }
+    },
+    {"name": "event_time", "type": "string"},
+    {"name": "user_id", "type": "string"},
+    {"name": "session_id", "type": "string"},
+    {"name": "order_id", "type": ["null", "string"], "default": null},
+    {"name": "product_id", "type": ["null", "string"], "default": null},
+    {"name": "quantity", "type": ["null", "int"], "default": null},
+    {"name": "price", "type": ["null", "double"], "default": null},
+    {"name": "currency", "type": "string"},
+    {
+      "name": "status",
+      "type": {
+        "type": "enum",
+        "name": "status_enum",
+        "symbols": ["viewed", "carted", "checkout_started", "created", "paid", "cancelled"]
+      }
+    },
+    {"name": "payment_method", "type": "string"},
+    {"name": "device", "type": "string"},
+    {"name": "source", "type": "string"},
+    {"name": "ingested_at", "type": "string"},
+    {"name": "campaign_id", "type": ["null", "string"], "default": null},
+    {"name": "voucher_code", "type": ["null", "string"], "default": null},
+    {"name": "shipping_city", "type": ["null", "string"], "default": null},
+    {"name": "raw_payload", "type": "string"}
+  ]
+}
+"""
 
 
 def now_utc() -> datetime:
@@ -122,9 +176,18 @@ def handle_signal(signum, frame) -> None:
     RUNNING = False
 
 
+def ensure_schema_registry(schema_registry_url: str, topic: str) -> tuple[int, int]:
+    schema_registry_client = SchemaRegistryClient({"url": schema_registry_url})
+    subject = f"{topic}-value"
+    schema_id = schema_registry_client.register_schema(subject, Schema(EVENT_SCHEMA, "AVRO"))
+    latest = schema_registry_client.get_latest_version(subject)
+    return schema_id, latest.version
+
+
 def main() -> int:
     brokers = os.getenv("REDPANDA_BROKERS", "redpanda:9092")
     topic = os.getenv("REDPANDA_TOPIC", "ecommerce_events")
+    schema_registry_url = os.getenv("SCHEMA_REGISTRY_URL", "http://redpanda:8081")
     events_per_second = max(float(os.getenv("EVENTS_PER_SECOND", "2")), 0.1)
     schema_evolution = env_bool("ENABLE_SCHEMA_EVOLUTION", False)
     duplicate_mode = env_bool("ENABLE_DUPLICATE_MODE", False)
@@ -136,12 +199,17 @@ def main() -> int:
     ensure_topic(brokers, topic)
 
     producer = Producer({"bootstrap.servers": brokers, "client.id": "ecommerce-producer"})
+    schema_id, schema_version = ensure_schema_registry(schema_registry_url, topic)
+    parsed_schema = parse_schema(json.loads(EVENT_SCHEMA))
     emitted_ids: list[str] = []
 
     while RUNNING:
         event = build_event(force_duplicate=duplicate_mode and random.random() < 0.1, previous_ids=emitted_ids)
         maybe_add_optional_fields(event, schema_evolution)
+        event["schema_id"] = schema_id
+        event["schema_version"] = schema_version
         event["raw_payload"] = json.dumps(event, separators=(",", ":"), sort_keys=True)
+        avro_validate(event, parsed_schema, raise_errors=True)
 
         producer.produce(
             topic=topic,
@@ -163,4 +231,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

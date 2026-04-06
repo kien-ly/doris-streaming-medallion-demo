@@ -1,4 +1,6 @@
 {
+  "schema_id": 1,
+  "schema_version": 1,
   "event_id": "evt_0123456789abcdef",
   "event_type": "order_paid",
   "event_time": "2026-04-03T04:00:00Z",
@@ -19,4 +21,3 @@
   "shipping_city": "Ho Chi Minh City",
   "raw_payload": "{\"campaign_id\":\"cmp_ab12cd34\",\"currency\":\"USD\",\"device\":\"web\",\"event_id\":\"evt_0123456789abcdef\",\"event_time\":\"2026-04-03T04:00:00Z\",\"event_type\":\"order_paid\",\"ingested_at\":\"2026-04-03T04:00:01Z\",\"order_id\":\"ord_6136a0fe12ab\",\"payment_method\":\"card\",\"price\":49.99,\"product_id\":\"sku_2048\",\"quantity\":2,\"session_id\":\"sess_7ab2d9cf01ef\",\"shipping_city\":\"Ho Chi Minh City\",\"source\":\"ads\",\"status\":\"paid\",\"user_id\":\"user_42\",\"voucher_code\":\"WELCOME10\"}"
 }
-

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This repository contains a Doris-focused, local-first medallion demo built with Docker Compose. It generates synthetic ecommerce events, publishes them to Redpanda, ingests them into Apache Doris through `ROUTINE LOAD`, and builds bronze, silver, and gold warehouse models with `dbt-doris`.
+This repository provides a Doris-focused, local-first medallion demo built with Docker Compose. It generates synthetic e-commerce events, publishes them to Redpanda, ingests them into Apache Doris via `ROUTINE LOAD`, and builds bronze, silver, and gold warehouse models with `dbt-doris`.
 
 The implementation is optimized for a reproducible local demonstration rather than production completeness.
 
@@ -13,6 +13,28 @@ Mandatory data path:
 Optional path:
 
 `dwh.bronze_events -> jobs/optional_iceberg_sink.py -> lakehouse.raw_events`
+
+## Table of Contents
+
+- [Architecture](#architecture)
+- [Data Modeling](#data-modeling)
+- [Validation Status](#validation-status)
+- [Prerequisites](#prerequisites)
+- [Repository Layout](#repository-layout)
+- [Quick Start](#quick-start)
+- [UI Endpoints](#ui-endpoints)
+- [Redpanda Console](#redpanda-console)
+- [Verify Redpanda](#verify-redpanda)
+- [Bootstrap Doris Objects](#bootstrap-doris-objects)
+- [Verify Raw Ingestion](#verify-raw-ingestion)
+- [Run dbt](#run-dbt)
+- [dbt Lineage and Data Quality Features](#dbt-lineage-and-data-quality-features)
+- [Schema Registry and Event Contracts](#schema-registry-and-event-contracts)
+- [Query Warehouse Outputs](#query-warehouse-outputs)
+- [Validation Procedures](#validation-procedures)
+- [Optional Iceberg Path](#optional-iceberg-path)
+- [Known Limitations](#known-limitations)
+- [Reference Results](#reference-results)
 
 ## Architecture
 
@@ -100,7 +122,7 @@ flowchart TD
   - source -> bronze -> silver -> gold
   - exposure mapping for dashboard dependencies
 
-## Validated Status
+## Validation Status
 
 The mandatory local demo path has been validated in the current workspace.
 
@@ -183,16 +205,17 @@ Expected runtime services:
 - **Redpanda Console**: http://localhost:8081 (`redpanda-ui`)
 - **Redpanda Admin API**: http://localhost:9644 (`redpanda`)
 - **Pandaproxy (HTTP proxy)**: http://localhost:8082 (`redpanda`)
-- **MinIO Console**: http://localhost:9001 — default credentials: MINIO_ROOT_USER=minioadmin / MINIO_ROOT_PASSWORD=minioadmin
+- **Schema Registry API**: http://localhost:18081 (`redpanda`)
+- **MinIO Console**: http://localhost:9001 — default credentials: `MINIO_ROOT_USER=minioadmin` / `MINIO_ROOT_PASSWORD=minioadmin`
 - **MinIO S3 endpoint**: http://localhost:9000 (used by `jobs` and the Iceberg path)
 - **Doris FE (Web UI)**: http://localhost:8030 — SQL/MySQL port: 9030; default user: `root` with empty password
-- **dbt docs & lineage**: http://localhost:8085 (`dbt-docs`)
+- **dbt Docs and Lineage**: http://localhost:8085 (`dbt-docs`)
 
 ## Redpanda Console
 
 View topics, partitions, and schema metadata in Redpanda Console by browsing to `http://localhost:8081`.
 
-Go to the *Topics* tab, filter for `ecommerce_events`, and click the topic to inspect partitions and consumer group activity. Console also lists the health of the Redpanda cluster on the home page.
+Go to the *Topics* tab, filter for `ecommerce_events`, and open the topic to inspect partitions and consumer group activity. The home page also shows Redpanda cluster health.
 
 ## Verify Redpanda
 
@@ -212,6 +235,12 @@ Inspect producer logs:
 
 ```bash
 docker compose logs --tail=100 producer
+```
+
+Check Schema Registry subjects:
+
+```bash
+docker compose exec redpanda curl -sS http://localhost:8081/subjects
 ```
 
 Open Redpanda UI:
@@ -281,7 +310,7 @@ docker compose exec dbt-runner dbt debug
 Notes:
 
 - `dbt debug` may report a missing `git` binary in the container.
-- That warning does not prevent a working Doris connection.
+- This warning does not block a working Doris connection.
 
 3. Build all models.
 
@@ -315,7 +344,7 @@ Open:
 
 - `http://localhost:8085`
 
-The docs site now includes:
+The docs site includes:
 
 - model-to-model lineage (`ref`)
 - source-to-model lineage (`source`)
@@ -351,6 +380,26 @@ Regenerate documentation artifacts after model changes:
 
 ```bash
 docker compose exec dbt-runner dbt docs generate
+```
+
+## Schema Registry and Event Contracts
+
+The producer registers an Avro schema in Redpanda Schema Registry under the default subject `<topic>-value` (for this demo: `ecommerce_events-value`).
+
+Implementation behavior:
+
+- Topic payload remains JSON text so Doris `ROUTINE LOAD` can ingest without custom decoders.
+- Producer validates every event against the registered Avro schema before publishing.
+- Producer injects `schema_id` and `schema_version` into each event for traceability.
+- Optional schema evolution fields (`campaign_id`, `voucher_code`, `shipping_city`) are nullable in the schema.
+
+Quick checks:
+
+```bash
+docker compose exec redpanda curl -sS http://localhost:8081/subjects
+docker compose exec redpanda curl -sS http://localhost:8081/subjects/ecommerce_events-value/versions
+docker compose exec redpanda curl -sS http://localhost:8081/subjects/ecommerce_events-value/versions/latest
+docker compose exec redpanda rpk topic consume ecommerce_events -n 1 -o end
 ```
 
 ## Query Warehouse Outputs
@@ -434,7 +483,7 @@ The Iceberg path is optional and is not required for the mandatory local demo pa
 
 Validated implementation:
 
-- [jobs/optional_iceberg_sink.py](.//jobs/optional_iceberg_sink.py) reads incremental windows from `dwh.bronze_events`
+- [jobs/optional_iceberg_sink.py](./jobs/optional_iceberg_sink.py) reads incremental windows from `dwh.bronze_events`
 - The job stores Iceberg catalog metadata in a local SQLite catalog at `jobs/.iceberg/demo_catalog.db`
 - Iceberg data and metadata files are written to MinIO under `s3://lakehouse/warehouse/lakehouse/raw_events`
 - `meta.batch_job_checkpoint` advances only after a successful append or a successful empty-window run
@@ -455,11 +504,11 @@ docker compose exec jobs python -c "from minio import Minio; client = Minio('min
 
 ## Known Limitations
 
-- Doris SQL constraints differ by version, especially around `ROUTINE LOAD` property bounds and table key definitions
-- The current single-node Doris demo requires `replication_num = 1`
-- `dbt-doris 1.0.0` shows adapter-specific test behavior for two silver tests even though the underlying Doris queries return valid results
-- `dbt debug` reports a missing `git` binary in the `dbt-runner` container
-- The optional Iceberg path is validated for a local demo, but it is intentionally minimal and not production-hardened
+- Doris SQL constraints differ by version, especially around `ROUTINE LOAD` property bounds and table key definitions.
+- The current single-node Doris demo requires `replication_num = 1`.
+- `dbt-doris 1.0.0` shows adapter-specific test behavior for two silver tests, even though the underlying Doris queries return valid results.
+- `dbt debug` reports a missing `git` binary in the `dbt-runner` container.
+- The optional Iceberg path is validated for a local demo, but it is intentionally minimal and not production-hardened.
 
 ## Reference Results
 
