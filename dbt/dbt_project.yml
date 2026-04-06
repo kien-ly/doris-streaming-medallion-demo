@@ -4,7 +4,7 @@ config-version: 2
 
 profile: ecommerce_demo
 
-model-paths: ["models", "tests"]
+model-paths: ["models"]
 macro-paths: ["macros"]
 test-paths: ["tests"]
 

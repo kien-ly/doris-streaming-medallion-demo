@@ -15,5 +15,4 @@ select
     lower(source) as source,
     cast(ingested_at as datetime) as ingested_at,
     raw_payload
-from ods.raw_ecommerce_events
-
+from {{ source('ods', 'raw_ecommerce_events') }}

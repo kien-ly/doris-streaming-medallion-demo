@@ -42,6 +42,64 @@ flowchart LR
     J -. optional .-> I
 ```
 
+## Data Modeling
+
+This project follows a medallion design with explicit table grains and transformation responsibilities.
+
+```mermaid
+flowchart TD
+    ODS["ods.raw_ecommerce_events<br/>Grain: raw ingest row"]
+    BR["dwh.bronze_events<br/>Grain: normalized event row"]
+    SI["dwh.silver_events<br/>Grain: 1 row per event_id (latest)"]
+
+    G1["analytics.gold_revenue_per_minute<br/>Grain: minute"]
+    G2["analytics.gold_order_cancellation_rate<br/>Grain: minute"]
+    G3["analytics.gold_conversion_funnel<br/>Grain: minute"]
+
+    ODS -->|"Type casting, canonical casing"| BR
+    BR -->|"Deduplicate by event_id using latest ingested_at/event_time"| SI
+    SI -->|"order_paid revenue aggregation"| G1
+    SI -->|"order_created vs order_cancelled ratio"| G2
+    SI -->|"page_view -> add_to_cart -> checkout_started -> order_paid"| G3
+```
+
+### Layer Contracts
+
+- `ods.raw_ecommerce_events` (raw landing): append-only ingestion table loaded by Doris `ROUTINE LOAD` from Kafka.
+- `dwh.bronze_events` (normalized events): one row per raw event record, with type normalization and canonical casing.
+- `dwh.silver_events` (deduplicated events): one row per `event_id` using latest `ingested_at` and `event_time`.
+- `analytics.gold_*` (business metrics): minute-level aggregates derived from `silver_events`.
+
+### Model Rules
+
+- Bronze enforces canonical typing:
+  - timestamps cast to `datetime`
+  - numeric fields cast to `int`/`decimal`
+  - enums standardized to lower/upper case
+- Silver enforces event-level uniqueness:
+  - partition by `event_id`
+  - keep latest record by `ingested_at desc, event_time desc`
+- Gold models are metric-specific:
+  - `gold_revenue_per_minute`: paid event count and gross revenue
+  - `gold_order_cancellation_rate`: created vs cancelled ratio
+  - `gold_conversion_funnel`: page view to paid conversion steps
+
+### Keys and Time Semantics
+
+- Business key for deduplication: `event_id`.
+- Operational freshness timestamp: `ingested_at` from ODS source.
+- Analytical time grain in gold: `date_trunc(event_time, 'minute')`.
+
+### Data Quality and Governance
+
+- Schema tests and documentation are centralized in `dbt/models/schema.yml`.
+- Source freshness checks are defined for `ods.raw_ecommerce_events`:
+  - warn after `30 minutes`
+  - error after `120 minutes`
+- dbt docs lineage includes:
+  - source -> bronze -> silver -> gold
+  - exposure mapping for dashboard dependencies
+
 ## Validated Status
 
 The mandatory local demo path has been validated in the current workspace.
@@ -55,7 +113,7 @@ Validated components:
 - dbt bronze, silver, and gold model builds
 - Gold metric queries
 
-Validation details are recorded in [doc/validation-report.md](.//doc/validation-report.md).
+Validation details are recorded in [doc/validation-report.md](./doc/validation-report.md).
 
 ## Prerequisites
 
@@ -84,7 +142,7 @@ Notes:
 - [sql/05_meta_checkpoint.sql](./sql/05_meta_checkpoint.sql)
 - [producer/producer.py](./producer/producer.py)
 - [dbt/dbt_project.yml](./dbt/dbt_project.yml)
-- [dbt/tests/schema.yml](./dbt/tests/schema.yml)
+- [dbt/models/schema.yml](./dbt/models/schema.yml)
 - [jobs/optional_iceberg_sink.py](./jobs/optional_iceberg_sink.py)
 - [doc/validation-report.md](./doc/validation-report.md)
 
@@ -116,8 +174,19 @@ Expected runtime services:
 - `doris-be`
 - `producer`
 - `dbt-runner`
+- `dbt-docs`
 - `minio`
 - `jobs`
+
+## UI Endpoints
+
+- **Redpanda Console**: http://localhost:8081 (`redpanda-ui`)
+- **Redpanda Admin API**: http://localhost:9644 (`redpanda`)
+- **Pandaproxy (HTTP proxy)**: http://localhost:8082 (`redpanda`)
+- **MinIO Console**: http://localhost:9001 — default credentials: MINIO_ROOT_USER=minioadmin / MINIO_ROOT_PASSWORD=minioadmin
+- **MinIO S3 endpoint**: http://localhost:9000 (used by `jobs` and the Iceberg path)
+- **Doris FE (Web UI)**: http://localhost:8030 — SQL/MySQL port: 9030; default user: `root` with empty password
+- **dbt docs & lineage**: http://localhost:8085 (`dbt-docs`)
 
 ## Redpanda Console
 
@@ -230,6 +299,58 @@ docker compose exec dbt-runner dbt test
 
 ```bash
 docker compose exec dbt-runner dbt run-operation grant_roles
+```
+
+## dbt Lineage and Data Quality Features
+
+### Lineage Graph and Catalog
+
+Start the dbt docs service:
+
+```bash
+docker compose up -d dbt-docs
+```
+
+Open:
+
+- `http://localhost:8085`
+
+The docs site now includes:
+
+- model-to-model lineage (`ref`)
+- source-to-model lineage (`source`)
+- exposure lineage for dashboard dependencies
+- column and model descriptions
+
+### Source Freshness
+
+Run freshness checks against the ODS source table:
+
+```bash
+docker compose exec dbt-runner dbt source freshness
+```
+
+Note: run Doris bootstrap SQL first so `ods.raw_ecommerce_events` exists.
+
+Configured policy:
+
+- warn after `30 minutes`
+- error after `120 minutes`
+
+If producer data is delayed, freshness can return `WARN` or `ERROR STALE` even when configuration is correct.
+
+### Selective Builds and Documentation Refresh
+
+Build only gold with its upstream dependencies:
+
+```bash
+docker compose exec dbt-runner dbt build --select +gold_*
+```
+
+Regenerate documentation artifacts after model changes:
+
+```bash
+docker compose exec dbt-runner dbt docs generate
 ```
 
 ## Query Warehouse Outputs

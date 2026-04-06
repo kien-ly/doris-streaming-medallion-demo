@@ -1,0 +1,151 @@
+version: 2
+
+sources:
+  - name: ods
+    database: ods
+    schema: ods
+    description: "Raw ingestion layer loaded by Doris ROUTINE LOAD from Redpanda."
+    tables:
+      - name: raw_ecommerce_events
+        description: "Raw ecommerce events persisted in Doris before dbt transformations."
+        loaded_at_field: ingested_at
+        config:
+          freshness:
+            warn_after: {count: 30, period: minute}
+            error_after: {count: 120, period: minute}
+
+models:
+  - name: bronze_events
+    description: "Normalized raw events with standard types and cleaned text fields."
+    columns:
+      - name: event_id
+        description: "Event identifier from producer payload."
+        tests:
+          - not_null
+      - name: event_type
+        description: "Canonical event type."
+        tests:
+          - accepted_values:
+              values: ['page_view', 'add_to_cart', 'checkout_started', 'order_created', 'order_paid', 'order_cancelled']
+      - name: event_time
+        description: "Business event timestamp."
+        tests:
+          - not_null
+      - name: user_id
+        description: "User identifier from source events."
+      - name: session_id
+        description: "Session identifier from source events."
+      - name: order_id
+        description: "Order identifier when available."
+      - name: product_id
+        description: "Product identifier when available."
+      - name: quantity
+        description: "Quantity from source events."
+      - name: price
+        description: "Unit price from source events."
+      - name: currency
+        description: "Currency code from source events."
+      - name: status
+        description: "Canonical event status."
+        tests:
+          - accepted_values:
+              values: ['viewed', 'carted', 'checkout_started', 'created', 'paid', 'cancelled']
+      - name: payment_method
+        description: "Payment method when available."
+      - name: device
+        description: "Device type."
+      - name: source
+        description: "Traffic/source channel."
+      - name: ingested_at
+        description: "Timestamp when event arrived in Doris."
+      - name: raw_payload
+        description: "Original JSON payload."
+
+  - name: silver_events
+    description: "Deduplicated events retaining the latest row per event_id."
+    columns:
+      - name: event_id
+        description: "Unique event identifier after deduplication."
+        tests:
+          - unique
+          - not_null
+      - name: event_type
+        description: "Canonical event type."
+      - name: event_time
+        description: "Event timestamp used in downstream metrics."
+      - name: user_id
+        description: "User identifier."
+      - name: session_id
+        description: "Session identifier."
+      - name: order_id
+        description: "Order identifier when available."
+      - name: product_id
+        description: "Product identifier when available."
+      - name: quantity
+        description: "Quantity from source events."
+      - name: currency
+        description: "Currency code."
+      - name: status
+        description: "Canonical event status."
+      - name: price
+        description: "Unit price captured from events."
+      - name: payment_method
+        description: "Payment method when available."
+      - name: device
+        description: "Device type."
+      - name: source
+        description: "Traffic/source channel."
+      - name: ingested_at
+        description: "Timestamp when row was ingested in raw layer."
+      - name: raw_payload
+        description: "Original JSON payload."
+
+  - name: gold_revenue_per_minute
+    description: "Revenue trend by minute from paid order events."
+    columns:
+      - name: metric_minute
+        description: "Minute grain for metric aggregation."
+      - name: paid_event_count
+        description: "Number of order_paid events."
+      - name: gross_revenue
+        description: "Sum of price * quantity."
+
+  - name: gold_order_cancellation_rate
+    description: "Order cancellation ratio by minute."
+    columns:
+      - name: metric_minute
+        description: "Minute grain for metric aggregation."
+      - name: created_order_count
+        description: "Number of order_created events."
+      - name: cancelled_order_count
+        description: "Number of order_cancelled events."
+      - name: cancellation_rate
+        description: "cancelled_order_count / created_order_count."
+
+  - name: gold_conversion_funnel
+    description: "Top-level conversion funnel counts by minute."
+    columns:
+      - name: metric_minute
+        description: "Minute grain for metric aggregation."
+      - name: page_view_count
+        description: "Count of page_view events."
+      - name: add_to_cart_count
+        description: "Count of add_to_cart events."
+      - name: checkout_started_count
+        description: "Count of checkout_started events."
+      - name: order_paid_count
+        description: "Count of order_paid events."
+
+exposures:
+  - name: ecommerce_revenue_dashboard
+    type: dashboard
+    maturity: low
+    url: "http://localhost:8030"
+    description: "Example BI dashboard backed by gold metrics in Doris."
+    depends_on:
+      - ref('gold_revenue_per_minute')
+      - ref('gold_order_cancellation_rate')
+      - ref('gold_conversion_funnel')
+    owner:
+      name: "Data Platform Team"
+      email: "data-platform@example.com"
